@@ -1,0 +1,27 @@
+name: Self test
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-hello-world:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: camaleaun/forge-hello-world
+          path: hello
+      - id: forge
+        uses: ./
+        with:
+          project-dir: hello
+          forge-ref: trunk
+      - name: Check the version output
+        env:
+          VERSION: ${{ steps.forge.outputs.version }}
+        run: test -n "$VERSION"

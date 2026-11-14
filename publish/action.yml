@@ -1,0 +1,47 @@
+name: Forge publish
+description: Write latest.json (sha256 per platform) and create the GitHub Release from the dist artifact.
+
+inputs:
+  tag:
+    description: Release tag, for example v1.2.0. Tags with a hyphen are published as prereleases.
+    default: ${{ github.ref_name }}
+  forge-ref:
+    description: Commit, tag or branch of camaleaun/forge used to build the manifest.
+    default: trunk
+  artifact-name:
+    description: Name of the artifact produced by camaleaun/forge-action.
+    default: dist
+  token:
+    description: Token with contents:write on the repository.
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: camaleaun/forge
+        ref: ${{ inputs.forge-ref }}
+        path: .forge
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: dist
+    - name: Write latest.json
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+      run: .forge/bin/forge manifest --dir dist --tag "$TAG" --repo "$GITHUB_REPOSITORY" > latest.json
+    - name: Create the release
+      shell: bash
+      env:
+        TAG: ${{ inputs.tag }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        flags=""
+        case "$TAG" in *-*) flags="--prerelease" ;; esac
+        # shellcheck disable=SC2086
+        gh release create "$TAG" dist/* latest.json --generate-notes $flags

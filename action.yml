@@ -1,0 +1,70 @@
+name: Forge build
+description: Build a forge app, package it (dmg and zip on macOS) and upload the dist artifact.
+
+inputs:
+  project-dir:
+    description: Directory that holds forge.json and actions.ts.
+    default: .
+  forge-ref:
+    description: Commit, tag or branch of camaleaun/forge used to build.
+    default: trunk
+  node-version:
+    description: Node.js version used to run forge.
+    default: '24'
+  artifact-name:
+    description: Name of the uploaded artifact.
+    default: dist
+
+outputs:
+  version:
+    description: App version read from forge.json.
+    value: ${{ steps.package.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Require macOS
+      if: runner.os != 'macOS'
+      shell: bash
+      run: |
+        echo "forge-action builds on macOS runners only for now" >&2
+        exit 1
+    - uses: actions/checkout@v4
+      with:
+        repository: camaleaun/forge
+        ref: ${{ inputs.forge-ref }}
+        path: .forge
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+    - name: Generate sources
+      shell: bash
+      env:
+        PROJECT_DIR: ${{ inputs.project-dir }}
+      run: .forge/bin/forge build --project "$PROJECT_DIR" --out "$RUNNER_TEMP/forge-src"
+    - name: Build
+      shell: bash
+      env:
+        PROJECT_DIR: ${{ inputs.project-dir }}
+      run: |
+        name="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1] + '/forge.json', 'utf8')).app.name" "$PROJECT_DIR")"
+        cmake -S "$RUNNER_TEMP/forge-src" -B "$RUNNER_TEMP/forge-out" -DCMAKE_BUILD_TYPE=Release
+        cmake --build "$RUNNER_TEMP/forge-out"
+        codesign --force --deep -s - "$RUNNER_TEMP/forge-out/${name}.app"
+    - name: Package
+      id: package
+      shell: bash
+      env:
+        PROJECT_DIR: ${{ inputs.project-dir }}
+      run: |
+        name="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1] + '/forge.json', 'utf8')).app.name" "$PROJECT_DIR")"
+        version="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1] + '/forge.json', 'utf8')).app.version" "$PROJECT_DIR")"
+        mkdir -p "$GITHUB_WORKSPACE/dist"
+        cpack --config "$RUNNER_TEMP/forge-out/CPackConfig.cmake" -G DragNDrop -B "$GITHUB_WORKSPACE/dist"
+        mv "$GITHUB_WORKSPACE/dist/${name}-"*.dmg "$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.dmg"
+        ditto -c -k --keepParent "$RUNNER_TEMP/forge-out/${name}.app" "$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.zip"
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: dist/*
