@@ -78,3 +78,12 @@ describe('given the build action builds the DMG', () => {
     assert.ok(!/^\s*cpack /m.test(text), 'cpack must not be called directly');
   });
 });
+
+describe('given an app with language packs', () => {
+  it('when action.yml is read, then the build is strict about translations and the packs travel with the release files', () => {
+    const text = readFileSync('action.yml', 'utf8');
+    assert.ok(text.includes('forge build --project "$PROJECT_DIR" --out "$RUNNER_TEMP/forge-src" --strict-i18n'));
+    assert.ok(text.includes('cp "$RUNNER_TEMP/forge-src/lang/"*.lang "$GITHUB_WORKSPACE/dist/"'), 'the packs are copied next to the dmg and the zip');
+    assert.match(text, /path: \|\n\s+dist\/\*\.dmg\n\s+dist\/\*\.zip\n\s+dist\/\*\.lang/);
+  });
+});

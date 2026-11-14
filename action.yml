@@ -69,7 +69,7 @@ runs:
       shell: bash
       env:
         PROJECT_DIR: ${{ inputs.project-dir }}
-      run: .forge/bin/forge build --project "$PROJECT_DIR" --out "$RUNNER_TEMP/forge-src"
+      run: .forge/bin/forge build --project "$PROJECT_DIR" --out "$RUNNER_TEMP/forge-src" --strict-i18n
     - name: Build
       shell: bash
       env:
@@ -114,6 +114,10 @@ runs:
         .forge/scripts/macos-sign.sh sign "$dmg"
         .forge/scripts/macos-sign.sh notarize "$dmg"
         .forge/scripts/macos-sign.sh staple "$dmg"
+        # Language packs (if the app has i18n/) are release files like the dmg and the zip.
+        if compgen -G "$RUNNER_TEMP/forge-src/lang/*.lang" > /dev/null; then
+          cp "$RUNNER_TEMP/forge-src/lang/"*.lang "$GITHUB_WORKSPACE/dist/"
+        fi
         ditto -c -k --keepParent "$RUNNER_TEMP/forge-out/${name}.app" "$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.zip"
         echo "version=${version}" >> "$GITHUB_OUTPUT"
     - uses: actions/upload-artifact@v4
@@ -122,3 +126,4 @@ runs:
         path: |
           dist/*.dmg
           dist/*.zip
+          dist/*.lang
