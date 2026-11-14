@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: camaleaun/forge-action@v1
         with:
-          project-dir: .          # holds forge.json and actions.ts
+          project-dir: .          # holds package.json, App.tsx and App.css
           forge-ref: trunk        # commit, tag or branch of camaleaun/forge
 ```
 

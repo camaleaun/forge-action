@@ -48,3 +48,12 @@ describe('given the build action packages and uploads', () => {
     assert.ok(!/path: dist\/\*\s*$/m.test(text), 'upload only dist/*.dmg and dist/*.zip');
   });
 });
+
+describe('given the build action needs the app name and version', () => {
+  it('when action.yml is read, then it asks forge info and no longer reads forge.json', () => {
+    const text = readFileSync('action.yml', 'utf8');
+    assert.ok(!text.includes('forge.json'), 'forge.json no longer exists');
+    assert.ok(text.includes('.forge/bin/forge info --project "$PROJECT_DIR" --field name'));
+    assert.ok(text.includes('.forge/bin/forge info --project "$PROJECT_DIR" --field version'));
+  });
+});
