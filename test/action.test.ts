@@ -70,3 +70,11 @@ describe('given the build action signs and notarizes', () => {
     }
   });
 });
+
+describe('given the build action builds the DMG', () => {
+  it('when action.yml is read, then the DMG goes through macos-dmg.sh (it retries when the Finder keeps the volume busy)', () => {
+    const text = readFileSync('action.yml', 'utf8');
+    assert.ok(text.includes('.forge/scripts/macos-dmg.sh "$RUNNER_TEMP/forge-out/CPackConfig.cmake" "$RUNNER_TEMP/forge-cpack" "$name"'));
+    assert.ok(!/^\s*cpack /m.test(text), 'cpack must not be called directly');
+  });
+});

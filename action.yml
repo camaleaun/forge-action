@@ -108,7 +108,7 @@ runs:
         name="$(.forge/bin/forge info --project "$PROJECT_DIR" --field name)"
         version="$(.forge/bin/forge info --project "$PROJECT_DIR" --field version)"
         mkdir -p "$GITHUB_WORKSPACE/dist"
-        cpack --config "$RUNNER_TEMP/forge-out/CPackConfig.cmake" -G DragNDrop -B "$RUNNER_TEMP/forge-cpack"
+        .forge/scripts/macos-dmg.sh "$RUNNER_TEMP/forge-out/CPackConfig.cmake" "$RUNNER_TEMP/forge-cpack" "$name"
         dmg="$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.dmg"
         mv "$RUNNER_TEMP/forge-cpack/${name}-"*.dmg "$dmg"
         .forge/scripts/macos-sign.sh sign "$dmg"
