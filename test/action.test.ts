@@ -147,6 +147,16 @@ describe('given the build action supports Linux', () => {
   });
 });
 
+describe('given a publish job that has not checked out the app repository', () => {
+  it('when the release step is read, then it sets GH_REPO to the current repository so gh needs no checkout, and the README says so', () => {
+    const text = readFileSync('publish/action.yml', 'utf8');
+    const step = text.slice(text.indexOf('- name: Create the release'));
+    assert.match(step, /GH_REPO: \$\{\{ github\.repository \}\}/);
+    const readme = readFileSync('README.md', 'utf8');
+    assert.match(readme, /needs no checkout/i);
+  });
+});
+
 describe('given artifacts from a build matrix', () => {
   it('when publish/action.yml is read, then it downloads by pattern (default dist*) and merges them into dist', () => {
     const text = readFileSync('publish/action.yml', 'utf8');

@@ -84,7 +84,7 @@ Needs a paid Apple Developer account. The steps live in forge's `scripts/macos-s
 
 Input `pattern` (default `dist*`) selects the artifacts to download; all matches are merged (`merge-multiple`) into one release. It replaces the old `artifact-name` input.
 It writes `latest.json` (sha256 and URL per platform, read by the app's auto-updater) and creates the release for the tag.
-Tags with a hyphen (`v1.0.0-rc.1`) are published as prereleases.
+Tags with a hyphen (`v1.0.0-rc.1`) are published as prereleases. Since v1.2.1 the publish action needs no checkout of the app repository (it sets `GH_REPO` for `gh`).
 
 ## Tests
 `npm test` checks the action metadata; `actionlint` lints the self-test workflow. No npm packages are installed.

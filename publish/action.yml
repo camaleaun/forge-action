@@ -41,6 +41,8 @@ runs:
       env:
         TAG: ${{ inputs.tag }}
         GH_TOKEN: ${{ inputs.token }}
+        # Without this, `gh` needs a git checkout of the repository to know where to create the release.
+        GH_REPO: ${{ github.repository }}
       run: |
         flags=""
         case "$TAG" in *-*) flags="--prerelease" ;; esac
