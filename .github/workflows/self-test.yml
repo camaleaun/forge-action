@@ -25,3 +25,33 @@ jobs:
         env:
           VERSION: ${{ steps.forge.outputs.version }}
         run: test -n "$VERSION"
+
+  build-hello-world-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: camaleaun/forge-hello-world
+          path: hello
+      - id: forge
+        uses: ./
+        with:
+          project-dir: hello
+          forge-ref: trunk
+          target: linux
+          artifact-name: dist-linux-${{ matrix.arch }}
+      - name: Check the version output
+        env:
+          VERSION: ${{ steps.forge.outputs.version }}
+        run: test -n "$VERSION"
+      - name: List the release files
+        run: ls -l dist

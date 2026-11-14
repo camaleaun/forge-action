@@ -8,9 +8,9 @@ inputs:
   forge-ref:
     description: Commit, tag or branch of camaleaun/forge used to build the manifest.
     default: trunk
-  artifact-name:
-    description: Name of the artifact produced by camaleaun/forge-action.
-    default: dist
+  pattern:
+    description: Glob of the artifact names produced by camaleaun/forge-action. All matches are merged into dist, so a build matrix (dist-macos, dist-linux-x86_64, dist-linux-arm64) publishes as one release.
+    default: dist*
   token:
     description: Token with contents:write on the repository.
     default: ${{ github.token }}
@@ -28,7 +28,8 @@ runs:
         node-version: '24'
     - uses: actions/download-artifact@v4
       with:
-        name: ${{ inputs.artifact-name }}
+        pattern: ${{ inputs.pattern }}
+        merge-multiple: true
         path: dist
     - name: Write latest.json
       shell: bash

@@ -12,8 +12,8 @@ function steps(text: string): string[] {
 
 describe('given each composite action', () => {
   for (const [file, inputs] of [
-    ['action.yml', ['project-dir', 'forge-ref', 'node-version', 'artifact-name']],
-    ['publish/action.yml', ['tag', 'forge-ref', 'artifact-name', 'token']],
+    ['action.yml', ['project-dir', 'forge-ref', 'node-version', 'artifact-name', 'target', 'snap']],
+    ['publish/action.yml', ['tag', 'forge-ref', 'pattern', 'token']],
   ] as const) {
     it(`when ${file} is read, then it is a composite action with the documented inputs`, () => {
       assert.ok(existsSync(file), `${file} is missing`);
@@ -75,7 +75,8 @@ describe('given the build action builds the DMG', () => {
   it('when action.yml is read, then the DMG goes through macos-dmg.sh (it retries when the Finder keeps the volume busy)', () => {
     const text = readFileSync('action.yml', 'utf8');
     assert.ok(text.includes('.forge/scripts/macos-dmg.sh "$RUNNER_TEMP/forge-out/CPackConfig.cmake" "$RUNNER_TEMP/forge-cpack" "$name"'));
-    assert.ok(!/^\s*cpack /m.test(text), 'cpack must not be called directly');
+    const macosPackage = steps(text).find((step) => step.startsWith('name: Package\n')) ?? '';
+    assert.ok(macosPackage.length > 0 && !/^\s*cpack /m.test(macosPackage), 'the macOS package step must not call cpack directly (Linux does, with CPack generators)');
   });
 });
 
@@ -85,5 +86,84 @@ describe('given an app with language packs', () => {
     assert.ok(text.includes('forge build --project "$PROJECT_DIR" --out "$RUNNER_TEMP/forge-src" --strict-i18n'));
     assert.ok(text.includes('cp "$RUNNER_TEMP/forge-src/lang/"*.lang "$GITHUB_WORKSPACE/dist/"'), 'the packs are copied next to the dmg and the zip');
     assert.match(text, /path: \|\n\s+dist\/\*\.dmg\n\s+dist\/\*\.zip\n\s+dist\/\*\.lang/);
+  });
+});
+
+describe('given the build action supports Linux', () => {
+  const text = readFileSync('action.yml', 'utf8');
+  const stepNamed = (fragment: string): string => steps(text).find((step) => step.includes(fragment)) ?? '';
+
+  it('when action.yml is read, then it has the target input (macos by default) and the snap input (true by default)', () => {
+    assert.match(text, /\n {2}target:\n(?: {4}.*\n)*? {4}default: macos/);
+    assert.match(text, /\n {2}snap:\n(?: {4}.*\n)*? {4}default: 'true'/);
+  });
+
+  it('when action.yml is read, then the macOS-only requirement is replaced by a runner and target consistency check', () => {
+    assert.ok(!text.includes('Require macOS'));
+    const check = stepNamed('runner and target');
+    assert.ok(check, 'a step that checks the runner against the target');
+    assert.match(check, /runner\.os/);
+    assert.match(check, /exit 1/);
+    assert.ok(text.indexOf('runner and target') < text.indexOf('uses: actions/checkout@v4'), 'the check runs first');
+  });
+
+  it('when the macOS steps are inspected, then they run only for target macos', () => {
+    for (const fragment of ['Import the signing certificate', 'Generate sources', 'Sign, notarize', 'name: Package\n', 'name: Build\n']) {
+      assert.match(stepNamed(fragment), /if: inputs\.target == 'macos'/, fragment);
+    }
+  });
+
+  it('when the Linux steps are inspected, then they run only for target linux and use the tools forge CI proved', () => {
+    const linuxSteps = steps(text).filter((step) => /^name: .*\(Linux\)/.test(step));
+    assert.ok(linuxSteps.length >= 5, 'expected the Linux steps to be named "(Linux)"');
+    for (const step of linuxSteps) assert.match(step, /if: inputs\.target == 'linux'/, step.split('\n')[0]);
+    const joined = linuxSteps.join('\n');
+    for (const pkg of ['cmake', 'g++', 'pkg-config', 'libgtk-4-dev', 'libsoup-3.0-dev', 'rpm', 'squashfs-tools']) assert.ok(joined.includes(pkg), pkg);
+    assert.ok(joined.includes('--strict-i18n --target linux'));
+    assert.ok(joined.includes('cmake --build'));
+    assert.match(joined, /cpack --config "\$RUNNER_TEMP\/forge-out\/CPackConfig\.cmake" -B "\$RUNNER_TEMP\/forge-cpack"/);
+    assert.ok(joined.includes('.forge/scripts/linux-appimage.sh'));
+    assert.ok(joined.includes('cp "$RUNNER_TEMP/forge-src/lang/"*.lang "$GITHUB_WORKSPACE/dist/"'));
+  });
+
+  it('when the Linux outputs are named, then they follow <name>-<version>-linux-<x86_64|arm64> and the AppImage is built from a DESTDIR install', () => {
+    assert.ok(text.includes('linux-${arch}'));
+    assert.match(text, /x86_64\)\s+arch=x86_64/);
+    assert.match(text, /aarch64\|arm64\)\s+arch=arm64/);
+    assert.ok(text.includes('DESTDIR="$RUNNER_TEMP/forge-root" cmake --install'));
+    assert.ok(text.includes('${name}-${version}-linux-${arch}.AppImage'));
+    assert.ok(text.includes('${name}-${version}-linux-${arch}.snap'));
+  });
+
+  it('when the snap step is inspected, then it is optional and uses snapcore/action-build pinned by a commit sha', () => {
+    const snap = stepNamed('snapcore/action-build');
+    assert.match(snap, /if: inputs\.target == 'linux' && inputs\.snap == 'true'/);
+    assert.match(snap, /uses: snapcore\/action-build@[0-9a-f]{40}/);
+  });
+
+  it('when the upload is inspected, then it also carries the Linux release files and the version output covers both targets', () => {
+    for (const glob of ['dist/*.deb', 'dist/*.rpm', 'dist/*.tar.gz', 'dist/*.AppImage', 'dist/*.snap']) assert.ok(text.includes(glob), glob);
+    assert.match(text, /value: \$\{\{ steps\.package\.outputs\.version \|\| steps\.package-linux\.outputs\.version \}\}/);
+  });
+});
+
+describe('given artifacts from a build matrix', () => {
+  it('when publish/action.yml is read, then it downloads by pattern (default dist*) and merges them into dist', () => {
+    const text = readFileSync('publish/action.yml', 'utf8');
+    assert.match(text, /\n {2}pattern:\n(?: {4}.*\n)*? {4}default: dist\*/);
+    assert.ok(text.includes('pattern: ${{ inputs.pattern }}'));
+    assert.ok(text.includes('merge-multiple: true'));
+    assert.ok(!text.includes('name: ${{ inputs.artifact-name }}'), 'no single-name download');
+  });
+
+  it('when the README is read, then it documents Linux and the matrix artifact names', () => {
+    const text = readFileSync('README.md', 'utf8');
+    for (const word of ['target: linux', 'dist-linux-arm64', 'pattern', 'ubuntu-24.04-arm', 'snap']) assert.ok(text.includes(word), word);
+  });
+
+  it('when the self-test is read, then it builds hello-world on both Linux runners and the check passes actionlint', () => {
+    const text = readFileSync('.github/workflows/self-test.yml', 'utf8');
+    assert.ok(text.includes('ubuntu-24.04-arm') && text.includes('ubuntu-24.04'));
+    assert.ok(text.includes('target: linux'));
   });
 });
