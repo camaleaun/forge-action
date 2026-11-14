@@ -60,11 +60,13 @@ runs:
         name="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1] + '/forge.json', 'utf8')).app.name" "$PROJECT_DIR")"
         version="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1] + '/forge.json', 'utf8')).app.version" "$PROJECT_DIR")"
         mkdir -p "$GITHUB_WORKSPACE/dist"
-        cpack --config "$RUNNER_TEMP/forge-out/CPackConfig.cmake" -G DragNDrop -B "$GITHUB_WORKSPACE/dist"
-        mv "$GITHUB_WORKSPACE/dist/${name}-"*.dmg "$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.dmg"
+        cpack --config "$RUNNER_TEMP/forge-out/CPackConfig.cmake" -G DragNDrop -B "$RUNNER_TEMP/forge-cpack"
+        mv "$RUNNER_TEMP/forge-cpack/${name}-"*.dmg "$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.dmg"
         ditto -c -k --keepParent "$RUNNER_TEMP/forge-out/${name}.app" "$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.zip"
         echo "version=${version}" >> "$GITHUB_OUTPUT"
     - uses: actions/upload-artifact@v4
       with:
         name: ${{ inputs.artifact-name }}
-        path: dist/*
+        path: |
+          dist/*.dmg
+          dist/*.zip

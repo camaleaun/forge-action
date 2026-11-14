@@ -39,3 +39,12 @@ describe('given the self-test workflow', () => {
     assert.equal(result.status, 0);
   });
 });
+
+describe('given the build action packages and uploads', () => {
+  it('when action.yml is read, then CPack stages outside dist and only the release files are uploaded', () => {
+    const text = readFileSync('action.yml', 'utf8');
+    // CPack's DragNDrop staging dir contains a symlink to /Applications; uploading dist/* would follow it.
+    assert.ok(!/cpack[^\n]*-B "\$GITHUB_WORKSPACE\/dist"/.test(text), 'cpack must not use dist as its build directory');
+    assert.ok(!/path: dist\/\*\s*$/m.test(text), 'upload only dist/*.dmg and dist/*.zip');
+  });
+});
