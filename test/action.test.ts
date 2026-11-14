@@ -57,3 +57,16 @@ describe('given the build action needs the app name and version', () => {
     assert.ok(text.includes('.forge/bin/forge info --project "$PROJECT_DIR" --field version'));
   });
 });
+
+describe('given the build action signs and notarizes', () => {
+  it('when action.yml is read, then signing goes through macos-sign.sh and the secrets are optional inputs', () => {
+    const text = readFileSync('action.yml', 'utf8');
+    assert.ok(!text.includes('codesign --force --deep -s -'), 'signing must go through the script');
+    for (const step of ['import-certificate', 'sign "$RUNNER_TEMP/forge-out/${name}.app"', 'notarize "$RUNNER_TEMP/forge-out/${name}.app"', 'staple "$RUNNER_TEMP/forge-out/${name}.app"']) {
+      assert.ok(text.includes(`.forge/scripts/macos-sign.sh ${step}`), step);
+    }
+    for (const input of ['macos-certificate-p12', 'macos-certificate-password', 'macos-signing-identity', 'notary-key-p8', 'notary-key-id', 'notary-issuer-id']) {
+      assert.match(text, new RegExp(`\\n  ${input}:`), `input ${input}`);
+    }
+  });
+});

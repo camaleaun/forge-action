@@ -14,6 +14,24 @@ inputs:
   artifact-name:
     description: Name of the uploaded artifact.
     default: dist
+  macos-certificate-p12:
+    description: Optional. base64 of the Developer ID Application certificate (.p12). Without signing inputs the app is signed ad-hoc.
+    default: ''
+  macos-certificate-password:
+    description: Optional. Password of the .p12.
+    default: ''
+  macos-signing-identity:
+    description: 'Optional. For example "Developer ID Application: Your Name (TEAMID)".'
+    default: ''
+  notary-key-p8:
+    description: Optional. base64 of the App Store Connect API key (.p8). Enables notarization.
+    default: ''
+  notary-key-id:
+    description: Optional. App Store Connect API key id.
+    default: ''
+  notary-issuer-id:
+    description: Optional. App Store Connect API issuer id.
+    default: ''
 
 outputs:
   version:
@@ -37,6 +55,16 @@ runs:
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
+    - name: Import the signing certificate (skipped without inputs)
+      shell: bash
+      env:
+        MACOS_CERTIFICATE_P12: ${{ inputs.macos-certificate-p12 }}
+        MACOS_CERTIFICATE_PASSWORD: ${{ inputs.macos-certificate-password }}
+        MACOS_SIGNING_IDENTITY: ${{ inputs.macos-signing-identity }}
+        NOTARY_KEY_P8: ${{ inputs.notary-key-p8 }}
+        NOTARY_KEY_ID: ${{ inputs.notary-key-id }}
+        NOTARY_ISSUER_ID: ${{ inputs.notary-issuer-id }}
+      run: .forge/scripts/macos-sign.sh import-certificate
     - name: Generate sources
       shell: bash
       env:
@@ -50,18 +78,42 @@ runs:
         name="$(.forge/bin/forge info --project "$PROJECT_DIR" --field name)"
         cmake -S "$RUNNER_TEMP/forge-src" -B "$RUNNER_TEMP/forge-out" -DCMAKE_BUILD_TYPE=Release
         cmake --build "$RUNNER_TEMP/forge-out"
-        codesign --force --deep -s - "$RUNNER_TEMP/forge-out/${name}.app"
+    - name: Sign, notarize and staple the app (ad-hoc signature without inputs)
+      shell: bash
+      env:
+        PROJECT_DIR: ${{ inputs.project-dir }}
+        MACOS_CERTIFICATE_P12: ${{ inputs.macos-certificate-p12 }}
+        MACOS_CERTIFICATE_PASSWORD: ${{ inputs.macos-certificate-password }}
+        MACOS_SIGNING_IDENTITY: ${{ inputs.macos-signing-identity }}
+        NOTARY_KEY_P8: ${{ inputs.notary-key-p8 }}
+        NOTARY_KEY_ID: ${{ inputs.notary-key-id }}
+        NOTARY_ISSUER_ID: ${{ inputs.notary-issuer-id }}
+      run: |
+        name="$(.forge/bin/forge info --project "$PROJECT_DIR" --field name)"
+        .forge/scripts/macos-sign.sh sign "$RUNNER_TEMP/forge-out/${name}.app"
+        .forge/scripts/macos-sign.sh notarize "$RUNNER_TEMP/forge-out/${name}.app"
+        .forge/scripts/macos-sign.sh staple "$RUNNER_TEMP/forge-out/${name}.app"
     - name: Package
       id: package
       shell: bash
       env:
         PROJECT_DIR: ${{ inputs.project-dir }}
+        MACOS_CERTIFICATE_P12: ${{ inputs.macos-certificate-p12 }}
+        MACOS_CERTIFICATE_PASSWORD: ${{ inputs.macos-certificate-password }}
+        MACOS_SIGNING_IDENTITY: ${{ inputs.macos-signing-identity }}
+        NOTARY_KEY_P8: ${{ inputs.notary-key-p8 }}
+        NOTARY_KEY_ID: ${{ inputs.notary-key-id }}
+        NOTARY_ISSUER_ID: ${{ inputs.notary-issuer-id }}
       run: |
         name="$(.forge/bin/forge info --project "$PROJECT_DIR" --field name)"
         version="$(.forge/bin/forge info --project "$PROJECT_DIR" --field version)"
         mkdir -p "$GITHUB_WORKSPACE/dist"
         cpack --config "$RUNNER_TEMP/forge-out/CPackConfig.cmake" -G DragNDrop -B "$RUNNER_TEMP/forge-cpack"
-        mv "$RUNNER_TEMP/forge-cpack/${name}-"*.dmg "$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.dmg"
+        dmg="$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.dmg"
+        mv "$RUNNER_TEMP/forge-cpack/${name}-"*.dmg "$dmg"
+        .forge/scripts/macos-sign.sh sign "$dmg"
+        .forge/scripts/macos-sign.sh notarize "$dmg"
+        .forge/scripts/macos-sign.sh staple "$dmg"
         ditto -c -k --keepParent "$RUNNER_TEMP/forge-out/${name}.app" "$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.zip"
         echo "version=${version}" >> "$GITHUB_OUTPUT"
     - uses: actions/upload-artifact@v4

@@ -19,7 +19,22 @@ jobs:
 ```
 
 Inputs: `project-dir`, `forge-ref`, `node-version` (default 24), `artifact-name` (default `dist`). Output: `version`.
-The job uploads `dist/` with `<app>-<version>-darwin-arm64.dmg` and `.zip`. The app is ad-hoc signed, not notarized.
+The job uploads `dist/` with `<app>-<version>-darwin-arm64.dmg` and `.zip`. Without signing inputs the app is signed ad-hoc and not notarized (macOS asks the user to confirm on first launch).
+
+## Signing and notarization (optional)
+Pass the Apple credentials as inputs and the app and the `.dmg` are signed with a Developer ID, notarized and stapled:
+
+```yaml
+      - uses: camaleaun/forge-action@v1
+        with:
+          macos-certificate-p12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          macos-certificate-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          macos-signing-identity: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          notary-key-p8: ${{ secrets.NOTARY_KEY_P8 }}
+          notary-key-id: ${{ secrets.NOTARY_KEY_ID }}
+          notary-issuer-id: ${{ secrets.NOTARY_ISSUER_ID }}
+```
+Needs a paid Apple Developer account. The steps live in forge's `scripts/macos-sign.sh`.
 
 ## Publish a release
 
