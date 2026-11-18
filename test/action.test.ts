@@ -12,7 +12,7 @@ function steps(text: string): string[] {
 
 describe('given each composite action', () => {
   for (const [file, inputs] of [
-    ['action.yml', ['project-dir', 'forge-ref', 'node-version', 'artifact-name', 'target', 'snap']],
+    ['action.yml', ['project-dir', 'forge-ref', 'node-version', 'artifact-name', 'target', 'snap', 'locale']],
     ['publish/action.yml', ['tag', 'forge-ref', 'pattern', 'token']],
   ] as const) {
     it(`when ${file} is read, then it is a composite action with the documented inputs`, () => {
@@ -131,8 +131,8 @@ describe('given the build action supports Linux', () => {
     assert.match(text, /x86_64\)\s+arch=x86_64/);
     assert.match(text, /aarch64\|arm64\)\s+arch=arm64/);
     assert.ok(text.includes('DESTDIR="$RUNNER_TEMP/forge-root" cmake --install'));
-    assert.ok(text.includes('${name}-${version}-linux-${arch}.AppImage'));
-    assert.ok(text.includes('${name}-${version}-linux-${arch}.snap'));
+    assert.ok(text.includes('${name}-${version}-linux-${arch}${suffix}.AppImage'));
+    assert.ok(text.includes('${name}-${version}-linux-${arch}${suffix}.snap'));
   });
 
   it('when the snap step is inspected, then it is optional and uses snapcore/action-build pinned by a commit sha', () => {
@@ -175,5 +175,66 @@ describe('given artifacts from a build matrix', () => {
     const text = readFileSync('.github/workflows/self-test.yml', 'utf8');
     assert.ok(text.includes('ubuntu-24.04-arm') && text.includes('ubuntu-24.04'));
     assert.ok(text.includes('target: linux'));
+  });
+});
+
+describe('given a language variant (the locale input)', () => {
+  const text = readFileSync('action.yml', 'utf8');
+  const stepNamed = (fragment: string): string => steps(text).find((step) => step.includes(fragment)) ?? '';
+
+  it('when action.yml is read, then locale is optional and empty by default', () => {
+    assert.match(text, /\n {2}locale:\n(?: {4}.*\n)*? {4}default: ''/);
+  });
+
+  it('when the check step runs, then a locale that is not a plain tag (pt-BR, fr, zh-Hant-TW) is refused before anything is built', () => {
+    const check = stepNamed('runner and target');
+    assert.match(check, /LOCALE: \$\{\{ inputs\.locale \}\}/);
+    assert.match(check, /\[A-Za-z\]\{2,3\}/);
+    assert.match(check, /exit 1/);
+  });
+
+  it('when forge build runs on either target, then the locale is passed as --bundle-locale only when it is set', () => {
+    for (const fragment of ['name: Generate sources\n', 'name: Generate sources (Linux)']) {
+      const step = stepNamed(fragment);
+      assert.match(step, /LOCALE: \$\{\{ inputs\.locale \}\}/, fragment);
+      assert.ok(step.includes('${LOCALE:+--bundle-locale "$LOCALE"}'), fragment);
+    }
+  });
+
+  it('when cmake configures on either target, then FORGE_VARIANT carries the locale (empty means the default package)', () => {
+    for (const fragment of ['name: Build\n', 'name: Build (Linux)']) {
+      const step = stepNamed(fragment);
+      assert.match(step, /LOCALE: \$\{\{ inputs\.locale \}\}/, fragment);
+      assert.ok(step.includes('-DFORGE_VARIANT="$LOCALE"'), fragment);
+    }
+  });
+
+  it('when the macOS files are named, then dmg and zip get the -<tag> suffix and nothing changes without a locale', () => {
+    const step = stepNamed('name: Package\n');
+    assert.ok(step.includes('suffix="${LOCALE:+-$LOCALE}"'));
+    assert.ok(step.includes('${name}-${version}-darwin-arm64${suffix}.dmg'));
+    assert.ok(step.includes('${name}-${version}-darwin-arm64${suffix}.zip'));
+  });
+
+  it('when the Linux files are named, then every package and the snap get the suffix', () => {
+    const packaging = stepNamed('Package deb, rpm, tar.gz and AppImage (Linux)');
+    assert.ok(packaging.includes('suffix="${LOCALE:+-$LOCALE}"'));
+    assert.ok(packaging.includes('${name}-${version}-linux-${arch}${suffix}".{deb,rpm,tar.gz}'));
+    assert.ok(stepNamed('Name the snap (Linux)').includes('suffix="${LOCALE:+-$LOCALE}"'));
+  });
+
+  it('when a variant is built, then the language packs are not copied again (the default build publishes them)', () => {
+    assert.equal((text.match(/if \[ -z "\$LOCALE" \] && compgen -G/g) ?? []).length, 2);
+  });
+
+  it('when the README is read, then it documents the locale input, the file names and the artifact names', () => {
+    const readme = readFileSync('README.md', 'utf8');
+    for (const word of ['locale: pt-BR', 'FORGE_VARIANT', 'dist-macos-pt-BR', '-pt-BR.dmg', 'variants']) assert.ok(readme.includes(word), word);
+  });
+
+  it('when the self-test is read, then it also builds a variant (locale: pt-BR) on macOS and Linux', () => {
+    const selfTest = readFileSync('.github/workflows/self-test.yml', 'utf8');
+    assert.match(selfTest, /locale: pt-BR/);
+    assert.ok(selfTest.includes('macos-latest') && selfTest.includes('dist-macos-pt-BR') && selfTest.includes('dist-linux-x86_64-pt-BR'));
   });
 });

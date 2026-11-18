@@ -17,6 +17,9 @@ inputs:
   snap:
     description: 'Linux only. Build the .snap too (snapcore/action-build). Use "false" to skip it.'
     default: 'true'
+  locale:
+    description: 'Optional. Build the language variant for this locale tag (for example pt-BR): its language pack is embedded (forge build --bundle-locale), the app opens in it with no download, and every file name gets the suffix -<tag> (<app>-<version>-<platform>-<tag>.<ext>). Empty builds the default package. Give the artifact its own name, for example dist-macos-pt-BR.'
+    default: ''
   artifact-name:
     description: Name of the uploaded artifact. In a build matrix make it unique per job, for example dist-linux-arm64.
     default: dist
@@ -52,7 +55,12 @@ runs:
       env:
         TARGET: ${{ inputs.target }}
         RUNNER_OS_NAME: ${{ runner.os }}
+        LOCALE: ${{ inputs.locale }}
       run: |
+        if [ -n "$LOCALE" ] && ! printf '%s' "$LOCALE" | grep -Eq '^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$'; then
+          echo "locale \"$LOCALE\" is not a locale tag (for example pt-BR, fr or zh-Hant-TW)" >&2
+          exit 1
+        fi
         case "$TARGET:$RUNNER_OS_NAME" in
           macos:macOS | linux:Linux) ;;
           macos:* | linux:*)
@@ -88,15 +96,17 @@ runs:
       shell: bash
       env:
         PROJECT_DIR: ${{ inputs.project-dir }}
-      run: .forge/bin/forge build --project "$PROJECT_DIR" --out "$RUNNER_TEMP/forge-src" --strict-i18n
+        LOCALE: ${{ inputs.locale }}
+      run: .forge/bin/forge build --project "$PROJECT_DIR" --out "$RUNNER_TEMP/forge-src" --strict-i18n ${LOCALE:+--bundle-locale "$LOCALE"}
     - name: Build
       if: inputs.target == 'macos'
       shell: bash
       env:
         PROJECT_DIR: ${{ inputs.project-dir }}
+        LOCALE: ${{ inputs.locale }}
       run: |
         name="$(.forge/bin/forge info --project "$PROJECT_DIR" --field name)"
-        cmake -S "$RUNNER_TEMP/forge-src" -B "$RUNNER_TEMP/forge-out" -DCMAKE_BUILD_TYPE=Release
+        cmake -S "$RUNNER_TEMP/forge-src" -B "$RUNNER_TEMP/forge-out" -DCMAKE_BUILD_TYPE=Release -DFORGE_VARIANT="$LOCALE"
         cmake --build "$RUNNER_TEMP/forge-out"
     - name: Sign, notarize and staple the app (ad-hoc signature without inputs)
       if: inputs.target == 'macos'
@@ -126,21 +136,24 @@ runs:
         NOTARY_KEY_P8: ${{ inputs.notary-key-p8 }}
         NOTARY_KEY_ID: ${{ inputs.notary-key-id }}
         NOTARY_ISSUER_ID: ${{ inputs.notary-issuer-id }}
+        LOCALE: ${{ inputs.locale }}
       run: |
         name="$(.forge/bin/forge info --project "$PROJECT_DIR" --field name)"
         version="$(.forge/bin/forge info --project "$PROJECT_DIR" --field version)"
+        suffix="${LOCALE:+-$LOCALE}"
         mkdir -p "$GITHUB_WORKSPACE/dist"
         .forge/scripts/macos-dmg.sh "$RUNNER_TEMP/forge-out/CPackConfig.cmake" "$RUNNER_TEMP/forge-cpack" "$name"
-        dmg="$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.dmg"
+        dmg="$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64${suffix}.dmg"
         mv "$RUNNER_TEMP/forge-cpack/${name}-"*.dmg "$dmg"
         .forge/scripts/macos-sign.sh sign "$dmg"
         .forge/scripts/macos-sign.sh notarize "$dmg"
         .forge/scripts/macos-sign.sh staple "$dmg"
         # Language packs (if the app has i18n/) are release files like the dmg and the zip.
-        if compgen -G "$RUNNER_TEMP/forge-src/lang/*.lang" > /dev/null; then
+        # A language variant does not ship them again: the default build does.
+        if [ -z "$LOCALE" ] && compgen -G "$RUNNER_TEMP/forge-src/lang/*.lang" > /dev/null; then
           cp "$RUNNER_TEMP/forge-src/lang/"*.lang "$GITHUB_WORKSPACE/dist/"
         fi
-        ditto -c -k --keepParent "$RUNNER_TEMP/forge-out/${name}.app" "$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64.zip"
+        ditto -c -k --keepParent "$RUNNER_TEMP/forge-out/${name}.app" "$GITHUB_WORKSPACE/dist/${name}-${version}-darwin-arm64${suffix}.zip"
         echo "version=${version}" >> "$GITHUB_OUTPUT"
     - name: Install the build tools (Linux)
       if: inputs.target == 'linux'
@@ -153,12 +166,15 @@ runs:
       shell: bash
       env:
         PROJECT_DIR: ${{ inputs.project-dir }}
-      run: .forge/bin/forge build --project "$PROJECT_DIR" --out "$RUNNER_TEMP/forge-src" --strict-i18n --target linux
+        LOCALE: ${{ inputs.locale }}
+      run: .forge/bin/forge build --project "$PROJECT_DIR" --out "$RUNNER_TEMP/forge-src" --strict-i18n --target linux ${LOCALE:+--bundle-locale "$LOCALE"}
     - name: Build (Linux)
       if: inputs.target == 'linux'
       shell: bash
+      env:
+        LOCALE: ${{ inputs.locale }}
       run: |
-        cmake -S "$RUNNER_TEMP/forge-src" -B "$RUNNER_TEMP/forge-out" -DCMAKE_BUILD_TYPE=Release
+        cmake -S "$RUNNER_TEMP/forge-src" -B "$RUNNER_TEMP/forge-out" -DCMAKE_BUILD_TYPE=Release -DFORGE_VARIANT="$LOCALE"
         cmake --build "$RUNNER_TEMP/forge-out"
     - name: Package deb, rpm, tar.gz and AppImage (Linux)
       if: inputs.target == 'linux'
@@ -166,24 +182,27 @@ runs:
       shell: bash
       env:
         PROJECT_DIR: ${{ inputs.project-dir }}
+        LOCALE: ${{ inputs.locale }}
       run: |
         name="$(.forge/bin/forge info --project "$PROJECT_DIR" --field name)"
         version="$(.forge/bin/forge info --project "$PROJECT_DIR" --field version)"
+        suffix="${LOCALE:+-$LOCALE}"
         case "$(uname -m)" in
           x86_64) arch=x86_64 ;;
           aarch64|arm64) arch=arm64 ;;
           *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;;
         esac
         mkdir -p "$GITHUB_WORKSPACE/dist"
-        # CPack names the files <name>-<version>-linux-<arch>.{deb,rpm,tar.gz}; it stages outside dist.
+        # CPack names the files <name>-<version>-linux-<arch>[-<tag>].{deb,rpm,tar.gz}; it stages outside dist.
         cpack --config "$RUNNER_TEMP/forge-out/CPackConfig.cmake" -B "$RUNNER_TEMP/forge-cpack"
-        mv "$RUNNER_TEMP/forge-cpack/${name}-${version}-linux-${arch}".{deb,rpm,tar.gz} "$GITHUB_WORKSPACE/dist/"
+        mv "$RUNNER_TEMP/forge-cpack/${name}-${version}-linux-${arch}${suffix}".{deb,rpm,tar.gz} "$GITHUB_WORKSPACE/dist/"
         DESTDIR="$RUNNER_TEMP/forge-root" cmake --install "$RUNNER_TEMP/forge-out"
         desktop="$(ls "$RUNNER_TEMP/forge-root/usr/share/applications/"*.desktop)"
         app_id="$(basename "$desktop" .desktop)"
-        .forge/scripts/linux-appimage.sh "$RUNNER_TEMP/forge-root" "$name" "$app_id" "$arch" "$GITHUB_WORKSPACE/dist/${name}-${version}-linux-${arch}.AppImage"
+        .forge/scripts/linux-appimage.sh "$RUNNER_TEMP/forge-root" "$name" "$app_id" "$arch" "$GITHUB_WORKSPACE/dist/${name}-${version}-linux-${arch}${suffix}.AppImage"
         # Language packs (if the app has i18n/) are release files too.
-        if compgen -G "$RUNNER_TEMP/forge-src/lang/*.lang" > /dev/null; then
+        # A language variant does not ship them again: the default build does.
+        if [ -z "$LOCALE" ] && compgen -G "$RUNNER_TEMP/forge-src/lang/*.lang" > /dev/null; then
           cp "$RUNNER_TEMP/forge-src/lang/"*.lang "$GITHUB_WORKSPACE/dist/"
         fi
         echo "version=${version}" >> "$GITHUB_OUTPUT"
@@ -200,7 +219,9 @@ runs:
       env:
         PROJECT_DIR: ${{ inputs.project-dir }}
         SNAP_FILE: ${{ steps.snapcraft.outputs.snap }}
+        LOCALE: ${{ inputs.locale }}
       run: |
+        suffix="${LOCALE:+-$LOCALE}"
         name="$(.forge/bin/forge info --project "$PROJECT_DIR" --field name)"
         version="$(.forge/bin/forge info --project "$PROJECT_DIR" --field version)"
         case "$(uname -m)" in
@@ -209,7 +230,7 @@ runs:
           *) echo "unsupported architecture $(uname -m)" >&2; exit 1 ;;
         esac
         mkdir -p "$GITHUB_WORKSPACE/dist"
-        mv "$SNAP_FILE" "$GITHUB_WORKSPACE/dist/${name}-${version}-linux-${arch}.snap"
+        mv "$SNAP_FILE" "$GITHUB_WORKSPACE/dist/${name}-${version}-linux-${arch}${suffix}.snap"
     - uses: actions/upload-artifact@v4
       with:
         name: ${{ inputs.artifact-name }}

@@ -18,7 +18,7 @@ jobs:
           forge-ref: trunk        # commit, tag or branch of camaleaun/forge
 ```
 
-Inputs: `project-dir`, `forge-ref`, `node-version` (default 24), `target` (`macos` default, or `linux`), `snap` (Linux only, default `true`), `artifact-name` (default `dist`). Output: `version`.
+Inputs: `project-dir`, `forge-ref`, `node-version` (default 24), `target` (`macos` default, or `linux`), `snap` (Linux only, default `true`), `locale` (a language variant, default empty), `artifact-name` (default `dist`). Output: `version`.
 The runner must match the target: the action fails early otherwise.
 The job uploads `dist/` with `<app>-<version>-darwin-arm64.dmg` and `.zip`. Without signing inputs the app is signed ad-hoc and not notarized (macOS asks the user to confirm on first launch).
 
@@ -54,6 +54,20 @@ jobs:
     steps:
       - uses: camaleaun/forge-action/publish@v1   # downloads dist* and merges them
 ```
+
+## Language variants
+
+The default package is English; it detects the system language and downloads the language pack. Set `locale` to build the variant for one locale instead: its pack (a file of the app's `languages/`) is embedded in the binary, so the app opens in that language out of the box, even offline, and the language menu still lets the user switch to English.
+
+```yaml
+      - uses: camaleaun/forge-action@v1
+        with:
+          target: ${{ matrix.target }}
+          locale: pt-BR                       # forge build --bundle-locale pt-BR, cmake -DFORGE_VARIANT=pt-BR
+          artifact-name: dist-macos-pt-BR     # artifact names stay yours; dist-<platform>-<tag> is the convention
+```
+
+Every file name gets `-<tag>` before the extension: `<app>-<version>-darwin-arm64-pt-BR.dmg` and `.zip`, and `<app>-<version>-linux-<x86_64|arm64>-pt-BR.deb`, `.rpm`, `.tar.gz`, `.AppImage` and `.snap` (the internal package, snap and app names and the app id do not change). A variant job does not upload the `*.lang` packs again; the default job does. Name the variant artifacts so that `dist*` still matches them (`dist-macos-pt-BR`): the publish job merges them with the default files, and `forge manifest` lists them under `variants` in `latest.json`, leaving `platforms`, `packages` and `languages` as they were. The tag must look like a locale tag (`pt-BR`, `fr`, `zh-Hant-TW`) and be one of the app's language files, otherwise the build fails. With `locale` empty nothing changes from v1.2.x. Needs a forge that has `--bundle-locale` (`forge-ref` set to a recent commit).
 
 ## Signing and notarization (optional)
 Pass the Apple credentials as inputs and the app and the `.dmg` are signed with a Developer ID, notarized and stapled:

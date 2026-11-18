@@ -55,3 +55,47 @@ jobs:
         run: test -n "$VERSION"
       - name: List the release files
         run: ls -l dist
+
+  build-hello-world-variant:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: macos
+            artifact: dist-macos-pt-BR
+          - os: ubuntu-24.04
+            target: linux
+            artifact: dist-linux-x86_64-pt-BR
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: camaleaun/forge-hello-world
+          path: hello
+      - id: forge
+        uses: ./
+        with:
+          project-dir: hello
+          forge-ref: trunk
+          target: ${{ matrix.target }}
+          locale: pt-BR
+          snap: 'false'
+          artifact-name: ${{ matrix.artifact }}
+      - name: Check the version output
+        env:
+          VERSION: ${{ steps.forge.outputs.version }}
+        run: test -n "$VERSION"
+      - name: The variant files carry the -pt-BR suffix and no language packs
+        run: |
+          ls -l dist
+          shopt -s nullglob
+          files=(dist/*)
+          test "${#files[@]}" -gt 0
+          for file in "${files[@]}"; do
+            case "$file" in
+              dist/*-pt-BR.*) ;;
+              *) echo "$file lacks the -pt-BR suffix or is a language pack" >&2; exit 1 ;;
+            esac
+          done
