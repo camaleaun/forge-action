@@ -18,7 +18,7 @@ jobs:
           forge-ref: trunk        # commit, tag or branch of camaleaun/forge
 ```
 
-Inputs: `project-dir`, `forge-ref`, `node-version` (default 24), `target` (`macos` default, or `linux`), `snap` (Linux only, default `true`), `locale` (a language variant, default empty), `artifact-name` (default `dist`). Output: `version`.
+Inputs: `project-dir`, `forge-ref`, `node-version` (default 24), `target` (`macos` default, or `linux`), `snap` (Linux only, default `true`), `snap-required` (Linux only, default `true`), `locale` (a language variant, default empty), `artifact-name` (default `dist`). Output: `version`.
 The runner must match the target: the action fails early otherwise.
 The job uploads `dist/` with `<app>-<version>-darwin-arm64.dmg` and `.zip`. Without signing inputs the app is signed ad-hoc and not notarized (macOS asks the user to confirm on first launch).
 
@@ -26,7 +26,7 @@ The job uploads `dist/` with `<app>-<version>-darwin-arm64.dmg` and `.zip`. With
 
 `target: linux` runs on `ubuntu-24.04` (x86_64) and `ubuntu-24.04-arm` (arm64). It installs GTK 4 and the build tools with apt, runs `forge build --target linux`, builds with cmake and packages with CPack plus forge's `scripts/linux-appimage.sh`. Files in `dist/`:
 `<app>-<version>-linux-<x86_64|arm64>.deb`, `.rpm`, `.tar.gz`, `.AppImage` and `.snap`, plus the `*.lang` packs of an app with i18n.
-The `.snap` is built by `snapcore/action-build` (pinned by commit); pass `snap: false` to skip it.
+The `.snap` is built by `snapcore/action-build` (pinned by commit); pass `snap: false` to skip it. With `snap-required: false` a failed snap build (for example when the Snap Store is down) does not fail the job: the step shows a warning and the release simply has no `.snap`.
 
 Artifact names must be unique per job, so give each matrix job its own `artifact-name` (`dist-macos`, `dist-linux-x86_64`, `dist-linux-arm64`):
 

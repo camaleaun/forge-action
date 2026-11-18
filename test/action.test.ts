@@ -12,7 +12,7 @@ function steps(text: string): string[] {
 
 describe('given each composite action', () => {
   for (const [file, inputs] of [
-    ['action.yml', ['project-dir', 'forge-ref', 'node-version', 'artifact-name', 'target', 'snap', 'locale']],
+    ['action.yml', ['project-dir', 'forge-ref', 'node-version', 'artifact-name', 'target', 'snap', 'snap-required', 'locale']],
     ['publish/action.yml', ['tag', 'forge-ref', 'pattern', 'token']],
   ] as const) {
     it(`when ${file} is read, then it is a composite action with the documented inputs`, () => {
@@ -133,6 +133,18 @@ describe('given the build action supports Linux', () => {
     assert.ok(text.includes('DESTDIR="$RUNNER_TEMP/forge-root" cmake --install'));
     assert.ok(text.includes('${name}-${version}-linux-${arch}${suffix}.AppImage'));
     assert.ok(text.includes('${name}-${version}-linux-${arch}${suffix}.snap'));
+  });
+
+  it('when snap-required is "false", then a snap build failure (for example a Snap Store outage) does not fail the job: the snap is not named or uploaded and a warning says so', () => {
+    const text = readFileSync('action.yml', 'utf8');
+    assert.match(text, /\n {2}snap-required:\n(?: {4}.*\n)*? {4}default: 'true'/);
+    const snap = stepNamed('snapcore/action-build');
+    assert.match(snap, /continue-on-error: \$\{\{ inputs\.snap-required != 'true' \}\}/);
+    assert.match(stepNamed('Name the snap (Linux)'), /steps\.snapcraft\.outcome == 'success'/);
+    const warning = stepNamed('Warn that the snap was skipped');
+    assert.match(warning, /steps\.snapcraft\.outcome == 'failure'/);
+    assert.match(warning, /::warning::/);
+    assert.match(readFileSync('README.md', 'utf8'), /snap-required/);
   });
 
   it('when the snap step is inspected, then it is optional and uses snapcore/action-build pinned by a commit sha', () => {

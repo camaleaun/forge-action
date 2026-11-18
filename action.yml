@@ -17,6 +17,9 @@ inputs:
   snap:
     description: 'Linux only. Build the .snap too (snapcore/action-build). Use "false" to skip it.'
     default: 'true'
+  snap-required:
+    description: 'Linux only. With "true" (default) a failed snap build fails the job. With "false" the job goes on without the .snap and shows a warning (for example when the Snap Store is down); the release then simply has no .snap.'
+    default: 'true'
   locale:
     description: 'Optional. Build the language variant for this locale tag (for example pt-BR): its language pack is embedded (forge build --bundle-locale), the app opens in it with no download, and every file name gets the suffix -<tag> (<app>-<version>-<platform>-<tag>.<ext>). Empty builds the default package. Give the artifact its own name, for example dist-macos-pt-BR.'
     default: ''
@@ -209,12 +212,18 @@ runs:
     - name: Build the snap with snapcore/action-build (Linux)
       if: inputs.target == 'linux' && inputs.snap == 'true'
       id: snapcraft
+      continue-on-error: ${{ inputs.snap-required != 'true' }}
       # snapcore/action-build v1.3.0
       uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79
       with:
         path: ${{ runner.temp }}/forge-src
+    - name: Warn that the snap was skipped
+      if: inputs.target == 'linux' && inputs.snap == 'true' && steps.snapcraft.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::The .snap could not be built (is the Snap Store reachable?) and snap-required is false, so this release has no .snap."
     - name: Name the snap (Linux)
-      if: inputs.target == 'linux' && inputs.snap == 'true'
+      if: inputs.target == 'linux' && inputs.snap == 'true' && steps.snapcraft.outcome == 'success'
       shell: bash
       env:
         PROJECT_DIR: ${{ inputs.project-dir }}
